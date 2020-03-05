@@ -1,6 +1,7 @@
 package importroll
 
 import (
+	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
@@ -35,37 +36,45 @@ var rules map[string]Rule
 var globLock sync.Mutex
 var globCache map[string]glob.Glob = make(map[string]glob.Glob)
 
-func readRules() {
+func readRules() error {
 	if rules != nil {
-		return
+		return nil
 	}
 	lock.Lock()
 	defer lock.Unlock()
 	bs, err := ioutil.ReadFile(rule)
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("Can not read rule. %w", err)
 	}
 	err = yaml.Unmarshal(bs, &rules)
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("Can not unmarshal yaml. %w", err)
 	}
+	return nil
 }
 
-func compileAndGetGlob(pattern string) glob.Glob {
+func compileAndGetGlob(pattern string) (glob.Glob, error) {
 	if v, found := globCache[pattern]; found {
-		return v
+		return v, nil
 	}
 	globLock.Lock()
 	defer globLock.Unlock()
-	globCache[pattern] = glob.MustCompile(pattern)
-	return globCache[pattern]
+	g, err := glob.Compile(pattern)
+	if err != nil {
+		return nil, err
+	}
+	globCache[pattern] = g
+	return g, nil
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {
 	readRules()
 	path := pass.Pkg.Path()
 	imports := pass.Pkg.Imports()
-	deny := collectDeny(path, imports)
+	deny, err := collectDeny(path, imports)
+	if err != nil {
+		return nil, err
+	}
 	for _, f := range pass.Files {
 		for _, decl := range f.Decls {
 			if decl, ok := decl.(*ast.GenDecl); ok {
@@ -84,24 +93,30 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	return nil, nil
 }
 
-func collectDeny(path string, imports []*types.Package) map[string]struct{} {
+func collectDeny(path string, imports []*types.Package) (map[string]struct{}, error) {
 	deny := map[string]struct{}{}
 	for key, rule := range rules {
-		g := compileAndGetGlob(key)
+		g, err := compileAndGetGlob(key)
+		if err != nil {
+			return nil, err
+		}
 		if !g.Match(path) {
 			continue
 		}
 		for _, v := range imports {
 			importedPath := v.Path()
 			for _, d := range rule.Deny {
-				g := compileAndGetGlob(d)
+				g, err := compileAndGetGlob(d)
+				if err != nil {
+					return nil, err
+				}
 				if g.Match(importedPath) {
 					deny[importedPath] = struct{}{}
 				}
 			}
 		}
 	}
-	return deny
+	return deny, nil
 }
 
 func imported(info *types.Info, spec *ast.ImportSpec) *types.Package {
