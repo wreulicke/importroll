@@ -1,0 +1,6 @@
+"*/controller*":
+  deny:
+    - "*/repository*"
+"*/repository*":
+  deny:
+    - "*/service*"
