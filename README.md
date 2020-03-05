@@ -4,12 +4,12 @@ importroll is a control tool for import.
 
 ## Install
 
-TBD
+Get binary from [GitHub Releases](https://github.com/wreulicke/importroll/releases/latest)
 
 ## Usage
 
 ```bash
-$ cat 
+$ cat importroll.yaml
 "*/controller*":
   deny:
     - "*/repository*"
@@ -18,3 +18,7 @@ $ cat
     - "*/service*"
 $ importroll -rule=./importroll.yaml ./...
 ```
+
+## License
+
+MIT
